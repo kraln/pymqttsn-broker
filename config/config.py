@@ -8,7 +8,7 @@ default_config = """
     listen_host=0.0.0.0
 [logging]
     path=/tmp/mqttsn_broker.log
-    level=INFO
+    level=DEBUG
     format=%%(asctime)s\t%%(name)s\t%%(levelname)s\t%%(message)s
 """
 # Read config

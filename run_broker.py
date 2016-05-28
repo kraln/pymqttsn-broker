@@ -3,13 +3,20 @@
 import logging
 import argparse as ap
 import sys
+import asyncio
+
+try:
+    import signal
+except ImportError:
+    signal = None
 
 from config.config import config
+from broker.broker import start_server
 
-logger = logging.getLogger('pymqttsn_broker')
+logger = logging.getLogger('broker')
 
 def log_exp(excType, excValue, traceback):
-"""Log exceptions also"""
+    """Log exceptions also"""
     logger.error(
         "Uncaught exception!",
         exc_info=(excType, excValue, traceback))
@@ -17,8 +24,8 @@ def log_exp(excType, excValue, traceback):
 sys.excepthook = log_exp
 
 def main():
-"""Set up logging, start the event loop"""
-    # File and console    
+    """Set up logging, start the event loop"""
+    # File and console
     fh = logging.FileHandler(config.get('logging', 'path'))
     ch = logging.StreamHandler()
 
@@ -27,20 +34,35 @@ def main():
     logger.setLevel(log_level)
     fh.setLevel(log_level)
     ch.setLevel(log_level)
-    
+
     # Set format
     formatter = logging.Formatter(config.get('logging', 'format'))
     fh.setFormatter(formatter)
     ch.setFormatter(formatter)
-    
+
     # Add handlers
     logger.addHandler(fh)
     logger.addHandler(ch)
 
     # ready to go
-    logger.info("broker started")
+    logger.info("pymqttsn broker started")
 
     # start the asyncio loop
+    loop = asyncio.get_event_loop()
+    if signal is not None:
+        loop.add_signal_handler(signal.SIGINT, loop.stop)
+
+    host = config.get('mqtt_sn', 'listen_host')
+    port = config.getint('mqtt_sn', 'listen_port')
+
+    server = start_server(loop, (host, port))
+
+    try:
+        loop.run_forever() # and ever and ever
+    finally:
+        server.close()
+        loop.close()
+        logger.info('Goodnight, sweet prince')
 
 if __name__ == "__main__":
 
@@ -54,6 +76,6 @@ if __name__ == "__main__":
         config.read(args.config)
     else:
         logger.warning("No configuration specified, using defaults.")
-    
+
     # Start service
     main()
