@@ -1,8 +1,10 @@
 pymqttsn broker
 ===============
 
+mqtt-sn broker based on the mqtt-sn 1.2 spec
+
 who
---
+---
 
 KIWI.KI GmbH is a physical access control as a service provider based in
 Berlin, Germany.
