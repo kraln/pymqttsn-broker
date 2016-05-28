@@ -4,6 +4,7 @@ import logging
 import argparse as ap
 import sys
 import asyncio
+import uvloop
 
 try:
     import signal
@@ -12,6 +13,9 @@ except ImportError:
 
 from config.config import config
 from broker.broker import start_server
+
+# use uvloop
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logger = logging.getLogger('broker')
 
