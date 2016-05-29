@@ -83,6 +83,9 @@ class MQTTSNMessage:
                     self.duration,
                     self.client_id)
 
+        #default
+        return MESSAGE_TYPES[self.message_type]
+
     def parse(self, data):
         """Parse bytes into a struct"""
 
@@ -137,7 +140,7 @@ class MQTTSNMessage:
                 return false
 
             self.duration = data[4] << 8 | data[5]
-            self.client_id = data[6:]
+            self.client_id = data[6:].decode()
 
         elif self.message_type == TYPE_LUT['PINGREQ']:
             pass

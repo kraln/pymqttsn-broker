@@ -6,6 +6,10 @@ default_config = """
 [mqtt_sn]
     listen_port=1885
     listen_host=0.0.0.0
+[redis]
+    host=localhost
+    broker_name=test
+    keepalive=30
 [logging]
     path=/tmp/mqttsn_broker.log
     level=DEBUG
