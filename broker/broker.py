@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import redis
+import aioredis
 import os
 import time
 import pickle
@@ -42,18 +43,17 @@ def myid():
     return 'broker:%s:%s' % (config.get('redis', 'broker_name'), os.getpid(),)
 
 @asyncio.coroutine
-def drain_queues(transport):
+def drain_queues(transport, loop):
+
+    conn = yield from aioredis.create_connection(
+                    (config.get('redis', 'host'), 6379), loop=loop)
     while True:
         # check redis for list of my clients
-        clients = r.zrange('%s:clients' % myid(), 0, -1)
-
-        logger.debug('I have %d client(s)' % len(clients))
+        clients = yield from conn.execute('zrange', '%s:clients' % myid(), 0, -1)
 
         # for each client, check redis if there is a message in their queue
         for client in clients:
-            client = client.decode()
-
-            next_message_in_queue = r.lpop('%s:queue' % client)
+            next_message_in_queue = yield from conn.execute('lpop', '%s:queue' % client)
 
             if next_message_in_queue is not None:
                 # not needed but makes nice debug
@@ -62,15 +62,16 @@ def drain_queues(transport):
                 logger.debug("Sending %s to %s" % (msg, client,))
 
                 # get the socket from redis
-                socket = pickle.loads(r.hget('%s:socket' % client, 'socket'))
+                socket = pickle.loads(client)
+
+                # if I want more info about this, it's here
+                # client_info = r.hget('%s:socket' % client, 'socket'))
 
                 # get transport somehow
                 transport.sendto(next_message_in_queue, socket)
-            else:
-                logger.debug('Client %s had no queued messages.' % client)
 
-        # XXX any way to make this faster?
-        yield from asyncio.sleep(1)
+    conn.close()
+
 
 @asyncio.coroutine
 def keepalive():
@@ -103,6 +104,6 @@ def start_server(loop, addr):
     asyncio.async(keepalive())
 
     # add the queue drainer
-    asyncio.async(drain_queues(transport))
+    asyncio.async(drain_queues(transport, loop))
 
     return transport

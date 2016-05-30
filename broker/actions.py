@@ -2,6 +2,7 @@ import logging
 import redis
 import time
 import pickle
+import struct
 
 from config.config import config
 from broker import message
@@ -18,13 +19,17 @@ class MQTTSNActions:
         """ Perform action based on message type """
         if message.message_type == TYPE_LUT['CONNECT']:
             MQTTSNActions.handle_connect(message, addr)
-            pass
+        elif message.message_type == TYPE_LUT['REGISTER']:
+            MQTTSNActions.handle_register(message, addr)
         elif message.message_type == TYPE_LUT['PINGREQ']:
-            pass
+            MQTTSNActions.handle_pingreq(message, addr)
+        elif message.message_type == TYPE_LUT['DISCONNECT']:
+            MQTTSNActions.handle_disconnect(message, addr)
 
     @staticmethod
     def queue(destination, payload):
         # add to the outgoing queue for that broker
+        logger.debug('Queued message for %s' % destination)
         r.rpush('%s:queue' % (destination,),  payload)
 
     @staticmethod
@@ -33,32 +38,113 @@ class MQTTSNActions:
         return result
 
     @staticmethod
+    def create_regack(message):
+        topic_id = r.zrank('topics', message.topic_name)
+        topic_id_bytes = struct.pack(">H", topic_id)
+
+        result = bytes(
+                [7, TYPE_LUT['REGACK'], # 7 byte response
+                topic_id_bytes[0], topic_id_bytes[1], # the topic id
+                message.message_id[1], message.message_id[2], # the message id
+                0])
+        return result
+
+    @staticmethod
+    def create_pingresp(message):
+        result = bytes([2, TYPE_LUT['PINGRESP']])
+        return result
+
+    @staticmethod
+    def create_disconnect(message):
+        result = bytes([2, TYPE_LUT['DISCONNECT']])
+        return result
+
+    @staticmethod
+    def handle_disconnect(message, addr):
+        addr_s = pickle.dumps(addr)
+
+        # Remove all the stuff for this client
+        # If I remove the socket, I can't reply to the disconnect...
+        # r.remove('%s:socket' % addr_s)
+        r.zrem('%s:clients' % broker.myid(), addr_s)
+
+        # socket for this client
+        r.hmset('%s:socket' % addr_s,
+                {
+                    'last_message': int(time.time()),
+                    'will_be_disconnected': True
+                }
+            )
+
+
+        # TODO: handle sleepy clients (clients with duration)
+
+        # queue the response
+        MQTTSNActions.queue(addr_s, MQTTSNActions.create_disconnect(message))
+
+    @staticmethod
+    def handle_pingreq(message, addr):
+        addr_s = pickle.dumps(addr)
+
+        # socket for this client
+        r.hmset('%s:socket' % addr_s,
+                {
+                    'last_message': int(time.time()),
+                }
+            )
+
+        # queue the response
+        MQTTSNActions.queue(addr_s, MQTTSNActions.create_pingresp(message))
+
+    @staticmethod
+    def handle_register(message, addr):
+        logger.debug("Handling REGISTER")
+
+        addr_s = pickle.dumps(addr)
+
+        # upsert the topic
+        r.zadd('topics', message.topic_name, int(time.time()))
+
+        # socket for this client
+        r.hmset('%s:socket' % addr_s,
+                {
+                    'last_message': int(time.time()),
+                }
+            )
+
+        # queue the ack
+        MQTTSNActions.queue(addr_s, MQTTSNActions.create_regack(message))
+
+
+    @staticmethod
     def handle_connect(message, addr):
+        logger.debug("Handling CONNECT")
+
         keeptime = config.getint('redis', 'keepalive') + 1
+        addr_s = pickle.dumps(addr)
 
         # tracking entry in redis (will be expired manually)
         r.zadd('%s:clients' % broker.myid(),
-                message.client_id,
+                addr_s,
                 int(time.time()) + message.duration)
 
         # socket for this client
-        r.hmset('%s:socket' % message.client_id,
+        r.hmset('%s:socket' % addr_s,
                 {
                     'broker_id': broker.myid(),
-                    'socket': pickle.dumps(addr),
+                    'client_id': message.client_id,
                     'last_message': int(time.time())
                 }
             )
 
         # be sure to clean up
-        r.expire('%s:socket' % message.client_id, keeptime)
+        r.expire('%s:socket' % addr_s, keeptime)
 
         # broker lookup entry
-        r.setex('%s:broker' % message.client_id, broker.myid(), message.duration)
+        r.setex('%s:broker' % addr_s, broker.myid(), message.duration)
 
         # TODO: if clean session is set, expire stuff related
         # to this this client right now
 
         # queue the CONNACK
-        MQTTSNActions.queue(message.client_id,
-                MQTTSNActions.create_connack(message))
+        MQTTSNActions.queue(addr_s, MQTTSNActions.create_connack(message))

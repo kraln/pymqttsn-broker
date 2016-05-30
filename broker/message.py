@@ -144,8 +144,16 @@ class MQTTSNMessage:
 
         elif self.message_type == TYPE_LUT['PINGREQ']:
             pass
-        elif self.message_type == TYPE_LUT['PUBLISH']:
-            pass
+        elif self.message_type == TYPE_LUT['REGISTER']:
+            """
+            Length      MsgType TopicId MsgId TopicName
+            (octet 0)   (1)     (2,3)   (4:5) (6:n)
+
+            Table 14: REGISTER Message
+            """
+            self.topic_id = data[2] << 8 | data[3]
+            self.message_id = (data[4] << 8 | data[5], data[4], data[5],)
+            self.topic_name = data[6:].decode()
 
         # I guess everything's okay
         return True
