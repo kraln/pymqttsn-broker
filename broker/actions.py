@@ -27,12 +27,16 @@ class MQTTSNActions:
             MQTTSNActions.handle_disconnect(message, addr)
         elif message.message_type == TYPE_LUT['PUBLISH']:
             MQTTSNActions.handle_publish(message, addr)
+        elif message.message_type == TYPE_LUT['SUBSCRIBE']:
+            MQTTSNActions.handle_subscribe(message, addr)
 
     @staticmethod
     def queue(destination, payload):
         # add to the outgoing queue for that broker
         logger.debug('Queued message for %s' % destination)
+        keeptime = config.getint('redis', 'keepalive') + 1
         r.rpush('%s:queue' % (destination,),  payload)
+        r.expire('%s:queue' % (destination,), int(time.time() + keeptime))
 
     @staticmethod
     def create_connack(message):
@@ -69,6 +73,65 @@ class MQTTSNActions:
                 message.message_id[1], message.message_id[2], # the message id
                 0])
         return result
+
+    @staticmethod
+    def create_suback(message, res):
+        if res is None:
+            # no match topic, tell the client it failed
+            result = 2 #congestion?
+            topic_id = (0, 0,)
+        else:
+            result = 0
+            topic_id = struct.pack(">H", res)
+
+        reply = bytes(
+                [9,
+                 TYPE_LUT['SUBACK'],
+                 0,
+                 0,
+                 topic_id[0],
+                 topic_id[1],
+                 message.message_id[1],
+                 message.message_id[2],
+                 result,])
+
+        return reply
+
+    @staticmethod
+    def handle_subscribe(message, addr):
+        addr_s = pickle.dumps(addr)
+        wildcard = False
+
+        # check if the subscription is to a named topic
+        if hasattr(message, 'topic_name'):
+            # check for wildcard characters
+            if '#' in message.topic_name or '+' in message.topic_name:
+            # if yes? leave it so, result is 0
+                wildcard = True
+                exists = True
+            else:
+            # if no, check to make sure topic exists
+            ### get by name
+                exists = r.zscore('topics', message.topic_name)
+        else:
+            # check to make sure topic exists
+            ### get by id
+            exists = r.zrange('topics', message.topic_id[0], message.topic_id[0])
+
+        if wildcard:
+            result = 0
+        elif exists:
+            result = exists
+        else:
+            result = None
+
+        if result is not None:
+        # look up the client id for this address
+        # add a subscription row (topic, client id)
+            pass
+
+        # queue response
+        MQTTSNActions.queue(addr_s, MQTTSNActions.create_suback(message, result))
 
     @staticmethod
     def handle_publish(message, addr):

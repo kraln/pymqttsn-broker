@@ -152,6 +152,22 @@ class MQTTSNMessage:
             self.message_id = (data[5] << 8 | data[6], data[5], data[6],)
             self.message = data[7:].decode()
 
+        elif self.message_type == TYPE_LUT['SUBSCRIBE']:
+            """
+            Length      MsgType Flags   MsgId TopicName or TopicId
+            (octet 0)   (1)     (2)     (3-4) (5:n)     or (5-6)
+            Table 19: SUBSCRIBE and UNSUBSCRIBE Messages
+            """
+            self.flags = MQTTSNFlags(data[2])
+            self.message_id = (data[3] << 8 | data[4], data[3], data[4],)
+
+            if self.flags.topic_id_type == 0x0:
+                # name
+                self.topic_name = data[5:].decode()
+            else:
+                # either id or reserved -- either way, two bytes
+                self.topic_id = (data[5] << 8 | data[6], data[5], data[6],)
+
         elif self.message_type == TYPE_LUT['REGISTER']:
             """
             Length      MsgType TopicId MsgId TopicName
