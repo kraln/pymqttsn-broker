@@ -142,8 +142,16 @@ class MQTTSNMessage:
             self.duration = data[4] << 8 | data[5]
             self.client_id = data[6:].decode()
 
-        elif self.message_type == TYPE_LUT['PINGREQ']:
-            pass
+        elif self.message_type == TYPE_LUT['PUBLISH']:
+            """
+            Length      MsgType Flags   TopicId MsgId Data
+            (octet 0)   (1)     (2)     (3-4)   (5-6) (7:n)
+            """
+            self.flags = MQTTSNFlags(data[2])
+            self.topic_id = (data[3] << 8 | data[4], data[3], data[4],)
+            self.message_id = (data[5] << 8 | data[6], data[5], data[6],)
+            self.message = data[7:].decode()
+
         elif self.message_type == TYPE_LUT['REGISTER']:
             """
             Length      MsgType TopicId MsgId TopicName

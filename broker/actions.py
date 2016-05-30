@@ -25,6 +25,8 @@ class MQTTSNActions:
             MQTTSNActions.handle_pingreq(message, addr)
         elif message.message_type == TYPE_LUT['DISCONNECT']:
             MQTTSNActions.handle_disconnect(message, addr)
+        elif message.message_type == TYPE_LUT['PUBLISH']:
+            MQTTSNActions.handle_publish(message, addr)
 
     @staticmethod
     def queue(destination, payload):
@@ -58,6 +60,29 @@ class MQTTSNActions:
     def create_disconnect(message):
         result = bytes([2, TYPE_LUT['DISCONNECT']])
         return result
+
+    @staticmethod
+    def create_puback(message):
+        result = bytes(
+                [7, TYPE_LUT['PUBACK'], # 7 byte response
+                message.topic_id[1], message.topic_id[2], # the topic id
+                message.message_id[1], message.message_id[2], # the message id
+                0])
+        return result
+
+    @staticmethod
+    def handle_publish(message, addr):
+        addr_s = pickle.dumps(addr)
+
+        # TODO: scan subscriptions for the topic id
+
+            # TODO: for each, send the publish message
+
+        logger.debug("Got publish of '%s' to topic id %d" % (
+            message.message, message.topic_id[0],))
+
+        # queue the response
+        MQTTSNActions.queue(addr_s, MQTTSNActions.create_disconnect(message))
 
     @staticmethod
     def handle_disconnect(message, addr):
