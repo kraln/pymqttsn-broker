@@ -66,7 +66,6 @@ class MQTTSNMessage:
     I have a length, and a message type, and a variable part which depends
     on the message type.
     """
-
     def __init__(self):
         # Some defaults
         self.flags = MQTTSNFlags(0)
@@ -178,7 +177,7 @@ class MQTTSNMessage:
             self.topic_id = data[2] << 8 | data[3]
             self.message_id = (data[4] << 8 | data[5], data[4], data[5],)
             self.topic_name = data[6:].decode()
-
+        
         # I guess everything's okay
         return True
 
