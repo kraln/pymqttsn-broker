@@ -6,16 +6,16 @@ mqtt-sn broker based on the mqtt-sn 1.2 spec
 who
 ---
 
-KIWI.KI GmbH is a physical access control as a service provider based in
-Berlin, Germany.
+Jeff Katz <kraln@kraln.com>, someone with way too much and yet somehow 
+not enough time on their hands.
 
 why
 ---
 
-The KIWI backend is written in Python, and so when we decided
-to introduce a new, standards-based IoT protocol for our devices and
-infrastructure, and chose MQTT-SN, we wanted our a broker that fit with the
-rest of our system. 
+I was leading tech at a shop where the backend was written in Python,
+and so when we decided to introduce a new, standards-based IoT protocol for
+our devices and infrastructure, and chose MQTT-SN, we wanted our a broker
+that fit with the rest of our system. 
 
 what
 ---
@@ -33,4 +33,4 @@ Python 3, libuv, asyncio, and redis. and love.
 
 license
 -------
-KIWI's stuff is MPLv2. Other stuff is as per their files.
+My stuff is MPLv2. Other stuff is as per their files.
