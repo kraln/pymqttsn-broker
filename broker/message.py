@@ -35,6 +35,9 @@ MESSAGE_TYPES = {
 
 TYPE_LUT = { v:k for k,v in MESSAGE_TYPES.items() }
 
+class MQTTSNParseException(Exception):
+    pass
+
 class MQTTSNFlags:
     """
     Flags class
@@ -50,11 +53,11 @@ class MQTTSNFlags:
         topic_id_type
     """
     def __init__(self, flags):
-        self.dup = True if flags & 0b10000000 else False
+        self.dup = bool(flags & 0b10000000)
         self.qos = (flags & 0b01100000) >> 5
-        self.retain = True if flags & 0b00010000 else False
-        self.will = True if flags & 0b00001000 else False
-        self.clean_session = True if flags & 0b00000100 else False
+        self.retain = bool(flags & 0b00010000)
+        self.will = bool(flags & 0b00001000)
+        self.clean_session = bool(flags & 0b00000100)
         self.topic_id_type = flags & 0b00000011
 
 class MQTTSNMessage:
@@ -104,11 +107,10 @@ class MQTTSNMessage:
                 self.message_type = data[1]
                 self.variable_index = 2
 
-            logger.debug('Packet %x (%s) decoded, length %x' % (
+            logger.debug('Packet %x (%s) decoded, length %x',
                 self.message_type,
                 MESSAGE_TYPES[self.message_type],
-                self.length,
-                )
+                self.length
             )
 
         except Exception as e:
@@ -117,68 +119,79 @@ class MQTTSNMessage:
             return False
 
         # Now, message-specific parsing
+        if self.message_type in self._SPECIFIC_PARSERS:
+            try:
+                self._SPECIFIC_PARSERS[self.message_type]()
+            except MQTTSNParseException:
+                logging.exception("Specific Message Parsing of %s Message Failed!", MESSAGE_TYPES[self.message_type])
+                return False
 
-        if self.message_type == TYPE_LUT['CONNECT']:
-            """
-            Flags:
-                NOT USED: DUP, QoS, Retain, TopicIDType
-                Will: If set, client requests will topic and message prompting
-                CleanSession: If set, remove all subscriptions for this client
-            ProtocolID:
-                Must be always 0x1
-            Duration:
-                Keep alive timer duration
-            Client ID:
-                (Rest of the message) The client's ID
-            """
-            self.flags = MQTTSNFlags(data[2])
-
-            # This has to be 1, basically.
-            if data[3] != 1:
-                logger.warning("Unknown protocol id: %d", (data[3],))
-                return false
-
-            self.duration = data[4] << 8 | data[5]
-            self.client_id = data[6:].decode()
-
-        elif self.message_type == TYPE_LUT['PUBLISH']:
-            """
-            Length      MsgType Flags   TopicId MsgId Data
-            (octet 0)   (1)     (2)     (3-4)   (5-6) (7:n)
-            """
-            self.flags = MQTTSNFlags(data[2])
-            self.topic_id = (data[3] << 8 | data[4], data[3], data[4],)
-            self.message_id = (data[5] << 8 | data[6], data[5], data[6],)
-            self.message = data[7:].decode()
-
-        elif self.message_type == TYPE_LUT['SUBSCRIBE']:
-            """
-            Length      MsgType Flags   MsgId TopicName or TopicId
-            (octet 0)   (1)     (2)     (3-4) (5:n)     or (5-6)
-            Table 19: SUBSCRIBE and UNSUBSCRIBE Messages
-            """
-            self.flags = MQTTSNFlags(data[2])
-            self.message_id = (data[3] << 8 | data[4], data[3], data[4],)
-
-            if self.flags.topic_id_type == 0x0:
-                # name
-                self.topic_name = data[5:].decode()
-            else:
-                # either id or reserved -- either way, two bytes
-                self.topic_id = (data[5] << 8 | data[6], data[5], data[6],)
-
-        elif self.message_type == TYPE_LUT['REGISTER']:
-            """
-            Length      MsgType TopicId MsgId TopicName
-            (octet 0)   (1)     (2,3)   (4:5) (6:n)
-
-            Table 14: REGISTER Message
-            """
-            self.topic_id = data[2] << 8 | data[3]
-            self.message_id = (data[4] << 8 | data[5], data[4], data[5],)
-            self.topic_name = data[6:].decode()
-        
         # I guess everything's okay
         return True
 
+    def parse_connect(self):
+        """
+        Flags:
+            NOT USED: DUP, QoS, Retain, TopicIDType
+            Will: If set, client requests will topic and message prompting
+            CleanSession: If set, remove all subscriptions for this client
+        ProtocolID:
+            Must be always 0x1
+        Duration:
+            Keep alive timer duration
+        Client ID:
+            (Rest of the message) The client's ID
+        """
+        self.flags = MQTTSNFlags(data[2])
 
+        # This has to be 1, basically.
+        if data[3] != 1:
+            logger.warning("Unknown protocol id: %d", (data[3],))
+            raise MQTTSNParseException
+
+        self.duration = data[4] << 8 | data[5]
+        self.client_id = data[6:].decode()
+
+    def parse_publish(self):
+        """
+        Length      MsgType Flags   TopicId MsgId Data
+        (octet 0)   (1)     (2)     (3-4)   (5-6) (7:n)
+        """
+        self.flags = MQTTSNFlags(data[2])
+        self.topic_id = (data[3] << 8 | data[4], data[3], data[4],)
+        self.message_id = (data[5] << 8 | data[6], data[5], data[6],)
+        self.message = data[7:].decode()
+
+    def parse_subscribe(self):
+        """
+        Length      MsgType Flags   MsgId TopicName or TopicId
+        (octet 0)   (1)     (2)     (3-4) (5:n)     or (5-6)
+        Table 19: SUBSCRIBE and UNSUBSCRIBE Messages
+        """
+        self.flags = MQTTSNFlags(data[2])
+        self.message_id = (data[3] << 8 | data[4], data[3], data[4],)
+
+        if self.flags.topic_id_type == 0x0:
+            # name
+            self.topic_name = data[5:].decode()
+        else:
+            # either id or reserved -- either way, two bytes
+            self.topic_id = (data[5] << 8 | data[6], data[5], data[6],)
+
+    def parse_register(self):
+        """
+        Length      MsgType TopicId MsgId TopicName
+        (octet 0)   (1)     (2,3)   (4:5) (6:n)
+
+        Table 14: REGISTER Message
+        """
+        self.topic_id = data[2] << 8 | data[3]
+        self.message_id = (data[4] << 8 | data[5], data[4], data[5],)
+        self.topic_name = data[6:].decode()
+
+    _SPECIFIC_PARSERS = {
+        TYPE_LUT['CONNECT']: parse_connect,
+        TYPE_LUT['PUBLISH']: parse_publish,
+        TYPE_LUT['SUBSCRIBE']: parse_subscribe,
+        TYPE_LUT['REGISTER']: parse_register,
+    }

@@ -30,7 +30,7 @@ class MQTTSNBrokerProtocol:
 
         logger.debug('Parsed: %s' % (msg, ))
 
-        actions.MQTTSNActions.handle(msg, addr)
+        actions.handle(msg, addr)
 
     def error_received(self, exc):
         logger.error(('Error received:', exc,))

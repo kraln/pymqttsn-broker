@@ -1,3 +1,2 @@
 redis==2.10.5
 aioredis==0.2.7
-uvloop==0.4.28
