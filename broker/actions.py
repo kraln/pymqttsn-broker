@@ -17,6 +17,8 @@ def handle(message, addr):
     mty = message.message_type
     if mty in _DISPATCH:
         _DISPATCH[mty](message, addr)
+    else:
+        log.warning("Unknown message type 0x%02X - Skipping", mty)
 
 
 def queue_msg(destination, payload):
